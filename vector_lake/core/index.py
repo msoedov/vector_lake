@@ -13,6 +13,7 @@ import pytz
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.neighbors import NearestNeighbors
+from .hnsw import HNSW
 
 # Optional dependencies
 try:
@@ -131,6 +132,11 @@ class LazyBucket(BaseModel):
     frame_schema: str = ["id", "vector", "metadata", "document", "timestamp"]
     vectors = []
     dirty_rows = []
+    hnsw: Any = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hnsw = HNSW("cosine", m0=5, ef=10)
 
     def __repr__(self):
         return f"<{self.__class__.__name__}({self.segment_index=} {len(self.vectors)=} {self.dirty=} {self.loaded=} )>"
@@ -157,6 +163,8 @@ class LazyBucket(BaseModel):
         self.loaded = True
         self.vectors = self.frame["vector"].tolist()
         self.dirty_rows = self.frame.to_dict("records")
+        for v in self.vectors:
+            self.hnsw.add(v)
 
     def append(self, vector: np.ndarray, **attrs):
         if not self.loaded:
@@ -173,6 +181,13 @@ class LazyBucket(BaseModel):
         self.dirty_rows.append(document)
         self.dirty = True
         self.vectors.append(vector)
+        self.hnsw.add(vector)
+
+    def search(self, vector: np.ndarray, k: int = 4):
+        self._lazy_load()
+        results = self.hnsw.search(vector, k)
+        ids = [r[0] for r in results]
+        return ids
 
     def sync(self):
         if not self.dirty:
@@ -395,16 +410,11 @@ class Index(BaseModel):
         ts = time.time()
         for shard in self.adjacent_routing(vector):
             te = time.time() - ts
-            print(f"adjacent routing took vps{1/te:.1f}")
+            # print(f"adjacent routing took vps{1/te:.1f}")
             shard_np = np.array(shard.vectors)
-            # similarities = timer_decorator(parallel_cosine_similarity)(
-            #     shard_np, target, n_most_similar=k
-            # )
+
+            closest_indices = shard.search(vector, k=k)
             shard_rows = shard.dirty_rows
-            similarities = timer_decorator(cosine_similarity_p)(shard_np, target)
-            # similarities = timer_decorator(cosine_similarity)(shard_np, target)
-            # Get the index of the closest vector
-            closest_indices = np.argsort(similarities.flatten())[-k:]
             closest_vectors = shard_np[closest_indices]
 
             for idx in closest_indices[::-1]:
