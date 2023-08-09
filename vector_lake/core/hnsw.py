@@ -1,11 +1,8 @@
-import pprint
-import sys
 from heapq import heapify, heappop, heappush, heapreplace, nlargest, nsmallest
 from math import log2
 from operator import itemgetter
 from random import random
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
 
 DISTANCE_L2 = "l2"
 DISTANCE_COSINE = "cosine"
