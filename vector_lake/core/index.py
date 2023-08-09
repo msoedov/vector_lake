@@ -86,6 +86,7 @@ def experimental_calculate_monthly_s3_costs(file_size_gb):
     return monthly_cost
 
 
+# TODO: unused
 def cosine_similarity_p(data_vectors, target, num_groups=5, split_if_more=50):
     if len(data_vectors) <= split_if_more:
         return cosine_similarity(data_vectors, target)
@@ -186,8 +187,7 @@ class LazyBucket(BaseModel):
     def search(self, vector: np.ndarray, k: int = 4):
         self._lazy_load()
         results = self.hnsw.search(vector, k)
-        ids = [r[0] for r in results]
-        return ids
+        return results
 
     def sync(self):
         if not self.dirty:
@@ -351,7 +351,8 @@ class Index(BaseModel):
             for _ in range(router.num_shards)
         ]
         self.nn_mapping = NearestNeighbors(
-            n_neighbors=10, metric="minkowski", algorithm="ball_tree"
+            n_neighbors=10,
+            metric="cosine",
         ).fit(router.nodes)
 
     def update_max_node(self, index, diff, vector):
@@ -404,24 +405,28 @@ class Index(BaseModel):
     @timer_decorator
     def _query(self, vector, k: int = 4) -> list:
         results = []
+        computed_distances = []
         rows = []
         vector = np.array(vector)
         target = vector.reshape(1, -1)
         ts = time.time()
+        rows_append = rows.append
         for shard in self.adjacent_routing(vector):
             te = time.time() - ts
-            # print(f"adjacent routing took vps{1/te:.1f}")
+            print(f"adjacent routing took vps{1/te:.1f}")
             shard_np = np.array(shard.vectors)
 
-            closest_indices = shard.search(vector, k=k)
+            closest_indices_d = shard.search(vector, k=k)
+            closest_indices = [idx for idx, _ in closest_indices_d]
             shard_rows = shard.dirty_rows
             closest_vectors = shard_np[closest_indices]
 
             for idx in closest_indices[::-1]:
-                rows.append(shard_rows[idx])
+                rows_append(shard_rows[idx])
             shard_rows = []
 
-            results.extend(list(closest_vectors[::-1]))
+            results.extend(list(closest_vectors))
+            computed_distances.extend([d for _, d in closest_indices_d])
             if len(results) >= k:
                 break
             print("hop")
@@ -429,12 +434,13 @@ class Index(BaseModel):
         result_vectors = np.array([vector for vector in results])
         if not result_vectors.any():
             return [], []
-        final_similarities = cosine_similarity(result_vectors, target)
-        # Sort by similarity
-        final_indices = np.argsort(final_similarities.flatten())[-k:]
-        final_vectors = result_vectors[final_indices]
-        final_rows = [rows[idx] for idx in final_indices[::-1]]
-        return final_vectors[::-1], final_rows
+
+        combined = list(zip(computed_distances, result_vectors, rows))
+        # Sort the combined list by distances
+        sorted_combined = sorted(combined, key=lambda x: x[0])
+        # Unzip the sorted list
+        sorted_distances, sorted_vectors, sorted_rows = zip(*sorted_combined)
+        return sorted_vectors[:k], sorted_rows[:k]
 
     def query(self, vector, k: int = 4) -> list:
         vectors, rows = self._query(vector, k)
