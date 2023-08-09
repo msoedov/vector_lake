@@ -12,7 +12,6 @@ import pandas as pd
 import pytz
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.neighbors import NearestNeighbors
 from .hnsw import HNSW
 
 # Optional dependencies
@@ -350,10 +349,9 @@ class Index(BaseModel):
             bucket_cls(segment_index=str(_), db_location=self.location)
             for _ in range(router.num_shards)
         ]
-        self.nn_mapping = NearestNeighbors(
-            n_neighbors=10,
-            metric="cosine",
-        ).fit(router.nodes)
+
+        self.nn_mapping = HNSW("cosine", m0=8, ef=2)
+        [self.nn_mapping.add(v) for v in self.nodes]
 
     def update_max_node(self, index, diff, vector):
         if self.max_node[index] is None:
@@ -385,10 +383,9 @@ class Index(BaseModel):
 
     def adjacent_routing(self, vector) -> int:
         target = vector.reshape(1, -1)
-        # similarities = cosine_similarity(self.nodes, target)
-        # closest_indices = np.argsort(similarities.flatten())
-        _, closest_indices = self.nn_mapping.kneighbors(target)
-        for closest_indice in closest_indices[0][::-1]:
+        results = self.nn_mapping.search(target)
+        closest_indices = [idx for idx, _ in results]
+        for closest_indice in closest_indices:
             shard = self.buckets[closest_indice]
             if len(shard) == 0:
                 continue
@@ -510,6 +507,3 @@ class Partition(VectorLake):
         self.buckets = [
             bucket_cls(segment_index=self.partition_key, db_location=self.location)
         ]
-        self.nn_mapping = NearestNeighbors(
-            n_neighbors=1, metric="minkowski", algorithm="ball_tree"
-        ).fit(router.nodes)
