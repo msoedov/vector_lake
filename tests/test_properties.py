@@ -112,13 +112,7 @@ def test_query_persistent(vector):
 @pytest.mark.skip(reason="benchmarking")
 @pytest.mark.parametrize(
     "db_size, shards",
-    [
-        (1_000, 243),
-        (10_000, 243),
-        (100_000, 243),
-        (100_000, 1243),
-        # (1_000_000, 500)
-    ],
+    [(1_000, 243), (10_000, 243), (100_000, 243), (100_000, 1243), (1_000_000, 500)],
 )
 def test_benchmark(benchmark, db_size, shards):
     index = index_factory(dimension=5, approx_shards=shards, size=db_size)

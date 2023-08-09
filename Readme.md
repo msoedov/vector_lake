@@ -1,6 +1,6 @@
 # VectorLake
 
-VectorLake is a robust, vector database designed for low maintenance, cost, efficient storage and querying of any size vector data distributed across S3 files.
+VectorLake is a robust, vector database designed for low maintenance, cost, efficient storage and ANN querying of any size vector data distributed across S3 files.
 
 <p>
 <img alt="GitHub Contributors" src="https://img.shields.io/github/contributors/msoedov/vector_lake" />
