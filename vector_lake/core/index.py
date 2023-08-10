@@ -12,7 +12,8 @@ import pandas as pd
 import pytz
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
-from .hnsw import HNSW
+
+from vector_lake.core.hnsw import HNSW
 
 # Optional dependencies
 try:
@@ -22,7 +23,7 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
 def make_granularity(D: int, M: int) -> list:
@@ -60,8 +61,9 @@ def timer_decorator(func):
         result = func(*args, **kwargs)
         end_time = time.time()
         elapsed_time = end_time - start_time
-        print(f"VPS for {func.__name__}: {1/elapsed_time:.1f} vectors per second")
-        # print(f"Elapsed time for {func.__name__}: {elapsed_time:.6f} seconds")
+        logger.debug(
+            f"VPS for {func.__name__}: {1/elapsed_time:.1f} vectors per second"
+        )
         return result
 
     return wrapper
@@ -169,9 +171,9 @@ class LazyBucket(BaseModel):
     def append(self, vector: np.ndarray, **attrs):
         if not self.loaded:
             self._lazy_load()
-
+        uid = uuid.uuid1().urn
         document = {
-            "id": uuid.uuid1().urn,
+            "id": uid,
             "vector": vector,
             "metadata": attrs.get("metadata", {"name": "unknown"}),
             "document": attrs.get("document", ""),
@@ -182,6 +184,7 @@ class LazyBucket(BaseModel):
         self.dirty = True
         self.vectors.append(vector)
         self.hnsw.add(vector)
+        return uid
 
     def search(self, vector: np.ndarray, k: int = 4):
         self._lazy_load()
@@ -290,7 +293,7 @@ class S3Bucket(LazyBucket):
     def upload_progress_callback(self, key):
         def upload_progress_callback(bytes_transferred):
             self.bytes_transferred += bytes_transferred
-            print(
+            logger.debug(
                 "\r{}: {} bytes have been transferred".format(
                     key, self.bytes_transferred
                 ),
@@ -373,6 +376,9 @@ class Index(BaseModel):
         return W
 
     def vector_router(self, vector: np.array) -> int:
+        if isinstance(vector, list):
+            vector = np.array(vector)
+
         target = vector.reshape(1, -1)
         similarities = cosine_similarity(self.nodes, target)
         closest_index = np.argmax(similarities)
@@ -405,12 +411,11 @@ class Index(BaseModel):
         computed_distances = []
         rows = []
         vector = np.array(vector)
-        target = vector.reshape(1, -1)
         ts = time.time()
         rows_append = rows.append
         for shard in self.adjacent_routing(vector):
             te = time.time() - ts
-            print(f"adjacent routing took vps{1/te:.1f}")
+            logger.debug(f"adjacent routing took vps{1/te:.1f}")
             shard_np = np.array(shard.vectors)
 
             closest_indices_d = shard.search(vector, k=k)
@@ -426,7 +431,7 @@ class Index(BaseModel):
             computed_distances.extend([d for _, d in closest_indices_d])
             if len(results) >= k:
                 break
-            print("hop")
+            logger.debug("next shard")
 
         result_vectors = np.array([vector for vector in results])
         if not result_vectors.any():
@@ -478,9 +483,10 @@ class VectorLake(Index):
             metadata = {"id": "1"}
 
         shard_index = self.vector_router(embedding)
-        self.buckets[shard_index].append(
+        uid = self.buckets[shard_index].append(
             embedding, metadata=metadata, document=document
         )
+        return uid
 
     def query(
         self,

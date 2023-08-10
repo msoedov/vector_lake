@@ -256,3 +256,4 @@ benchmarks/
 tmp/
 issues.py
 issues.todo
+.vector_lake/

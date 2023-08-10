@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "vector_lake"
-version = "0.0.2"
-description = "Serverless vector database for bigdata"
+version = "0.0.3"
+description = "S3 vector database for bigdata"
 authors = ["Alexander Miasoiedov <msoedov@gmail.com>"]
 maintainers = [
     "Alexander Miasoiedov <msoedov@gmail.com>",

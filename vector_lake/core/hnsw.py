@@ -2,6 +2,7 @@ from heapq import heapify, heappop, heappush, heapreplace, nlargest, nsmallest
 from math import log2
 from operator import itemgetter
 from random import random
+
 import numpy as np
 
 DISTANCE_L2 = "l2"
@@ -17,9 +18,11 @@ def cosine_distance(a, b):
 
 
 class HNSW:
-    """
-    Navigable small world models are defined as any network with (poly/)logarithmic complexity using greedy routing.
-    The efficiency of greedy routing breaks down for larger networks (1-10K+ vertices) when a graph is not navigable [7].
+    """Navigable small world models are defined as any network with
+    (poly/)logarithmic complexity using greedy routing.
+
+    The efficiency of greedy routing breaks down for larger networks
+    (1-10K+ vertices) when a graph is not navigable [7].
     """
 
     def __init__(
@@ -71,7 +74,6 @@ class HNSW:
 
         # level at which the element will be inserted
         level = int(-log2(random()) * self._level_mult) + 1
-        # print("level: %d" % level)
 
         # elem will be at data[idx]
         idx = len(data)
@@ -179,7 +181,7 @@ class HNSW:
         best = entry
         best_dist = dist
         candidates = [(dist, entry)]
-        visited = set([entry])
+        visited = {entry}
 
         while candidates:
             dist, c = heappop(candidates)
@@ -202,14 +204,13 @@ class HNSW:
 
         candidates = [(-mdist, p) for mdist, p in ep]
         heapify(candidates)
-        visited = set(p for _, p in ep)
+        visited = {p for _, p in ep}
 
         while candidates:
             dist, c = heappop(candidates)
             mref = ep[0][0]
             if dist > -mref:
                 break
-            # pprint.pprint(layer[c])
             edges = [e for e in layer[c] if e not in visited]
             visited.update(edges)
             dists = vectorized_distance(q, [data[e] for e in edges])
