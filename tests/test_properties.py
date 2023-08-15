@@ -82,6 +82,7 @@ def test_query_empty(vector):
     )
     closest_vectors = index.query(vector, 4)
     assert len(closest_vectors) == 0
+    index.delete_local()
 
 
 # TODO: fix [0.0, 0.0, 0.0, 0.0, 0.0] case

@@ -1,5 +1,6 @@
 import datetime
 import logging
+import math
 import os
 import time
 import uuid
@@ -24,6 +25,64 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
+
+
+class LSH:
+    def __init__(self, dim, num_hashes, bucket_size=100_000, random_seed=42):
+        """Initialize LSH object.
+
+        dim: Dimension of vectors
+        num_hashes: Number of hash functions (hyperplanes) to use
+        bucket_size: Size of hash buckets
+        """
+        self.dim = dim
+        self.num_hashes = num_hashes
+        self.bucket_size = bucket_size
+        np.random.seed(random_seed)
+        self.hyperplanes = np.random.randn(self.num_hashes, self.dim)
+        self.buckets = {}
+
+    @property
+    def max_partitions(self):
+        return 2**self.num_hashes
+
+    def _hash(self, vector):
+        """Hashes a vector using all hyperplanes.
+
+        Returns a string of 0s and 1s.
+        """
+        return int(
+            "".join(
+                [
+                    "1" if np.dot(hyperplane, vector) > 0 else "0"
+                    for hyperplane in self.hyperplanes
+                ]
+            ),
+            base=2,
+        )
+
+    route = _hash
+
+    def insert(self, vector, label):
+        """Inserts a vector into the LSH structure.
+
+        vector: The vector to insert
+        label: An identifier for the vector
+        """
+        h = self._hash(vector)
+        if h not in self.buckets:
+            self.buckets[h] = []
+        if len(self.buckets[h]) < self.bucket_size:
+            self.buckets[h].append((vector, label))
+
+    def query(self, vector):
+        """Queries the LSH structure for similar vectors to the given vector.
+
+        vector: The vector to query
+        Returns a list of similar vectors and their labels.
+        """
+        h = self._hash(vector)
+        return self.buckets.get(h, [])
 
 
 def make_granularity(D: int, M: int) -> list:
@@ -135,6 +194,7 @@ class LazyBucket(BaseModel):
     vectors = []
     dirty_rows = []
     hnsw: Any = None
+    attrs: dict[str, Any] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -160,6 +220,7 @@ class LazyBucket(BaseModel):
             self.frame = pd.read_parquet(self.frame_location)
         else:
             self.frame = pd.DataFrame(columns=self.frame_schema)
+            self.attrs = self.frame.attrs
         if list(self.frame.columns) != self.frame_schema:
             raise ValueError(f"Invalid frame_schema {self.frame.columns=}")
         self.loaded = True
@@ -188,10 +249,13 @@ class LazyBucket(BaseModel):
 
     def search(self, vector: np.ndarray, k: int = 4):
         self._lazy_load()
-        results = self.hnsw.search(vector, k)
+        try:
+            results = self.hnsw.search(vector, k)
+        except ValueError:  # Empty graph
+            return []
         return results
 
-    def sync(self):
+    def sync(self, **attrs):
         if not self.dirty:
             return
 
@@ -199,6 +263,10 @@ class LazyBucket(BaseModel):
         if self.frame.empty:
             return
         # TODO: eval last sync time
+        self.frame.attrs["last_update"] = datetime.datetime.now(pytz.UTC)
+        for k, v in attrs.items():
+            self.frame.attrs[k] = v
+
         os.makedirs(self.db_location, exist_ok=True)
         self.frame.to_parquet(self.frame_location, compression="gzip")
         self.dirty = False
@@ -335,26 +403,19 @@ class Index(BaseModel):
     max_node: list | None
     W: list | None
     nn_mapping: Any | None
+    lsh: Any | None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         router = self
-        router.granularity = levels = make_granularity(
-            self.dimension, self.approx_shards
-        )
-        router.num_shards = np.prod(levels)
-        router.nodes = nodes = make_nodes(levels, router.num_shards)
-        router.max_node = [None] * len(nodes)
-
+        router.lsh = LSH(self.dimension, int(math.log(self.approx_shards, 2) + 0.5))
+        router.num_shards = router.lsh.max_partitions
         bucket_cls = S3Bucket if router.location.startswith("s3://") else LazyBucket
         self.buckets = [
             bucket_cls(segment_index=str(_), db_location=self.location)
             for _ in range(router.num_shards)
         ]
-
-        self.nn_mapping = HNSW("cosine", m0=8, ef=2)
-        [self.nn_mapping.add(v) for v in self.nodes]
 
     def update_max_node(self, index, diff, vector):
         if self.max_node[index] is None:
@@ -378,24 +439,12 @@ class Index(BaseModel):
     def vector_router(self, vector: np.array) -> int:
         if isinstance(vector, list):
             vector = np.array(vector)
-
-        target = vector.reshape(1, -1)
-        similarities = cosine_similarity(self.nodes, target)
-        closest_index = np.argmax(similarities)
-        # self.nodes[closest_index]
-        diff = similarities[closest_index]
-        self.update_max_node(closest_index, diff[0], vector)
+        closest_index = self.lsh.route(vector)
         return closest_index
 
     def adjacent_routing(self, vector) -> int:
-        target = vector.reshape(1, -1)
-        results = self.nn_mapping.search(target)
-        closest_indices = [idx for idx, _ in results]
-        for closest_indice in closest_indices:
-            shard = self.buckets[closest_indice]
-            if len(shard) == 0:
-                continue
-            yield shard
+        closest_index = self.lsh.route(vector)
+        yield self.buckets[closest_index]
 
     def __repr__(self):
         return f"<Index({self.location=}, {self.metric_function=}, {self.max_cache_mb}, {self.num_shards=})>"
@@ -416,6 +465,7 @@ class Index(BaseModel):
         for shard in self.adjacent_routing(vector):
             te = time.time() - ts
             logger.debug(f"adjacent routing took vps{1/te:.1f}")
+            shard._lazy_load()
             shard_np = np.array(shard.vectors)
 
             closest_indices_d = shard.search(vector, k=k)
