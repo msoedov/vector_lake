@@ -7,6 +7,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from itertools import product
 from typing import Any
+from json import dumps
 
 import numpy as np
 import pandas as pd
@@ -263,7 +264,8 @@ class LazyBucket(BaseModel):
         if self.frame.empty:
             return
         # TODO: eval last sync time
-        self.frame.attrs["last_update"] = datetime.datetime.now(pytz.UTC)
+        now_dt = datetime.datetime.now(pytz.UTC)
+        self.frame.attrs["last_update"] = dumps(now_dt, indent=4, sort_keys=True, default=str)
         for k, v in attrs.items():
             self.frame.attrs[k] = v
 
@@ -317,9 +319,10 @@ class S3Bucket(LazyBucket):
 
     @property
     def s3_client(self):
-        return boto3.client(
-            "s3", endpoint_url=os.environ.get("LOCALSTACK_ENDPOINT_URL")
-        )
+        return boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION"))
+            #"s3", endpoint_url=os.environ.get("LOCALSTACK_ENDPOINT_URL")
+
+
 
     def _lazy_load(self):
         if self.loaded:
