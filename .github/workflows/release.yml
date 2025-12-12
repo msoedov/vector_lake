@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Build project for distribution
-        run: uv build
+        run: uv run --with build python -m build
       - name: Publish to PyPI
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
