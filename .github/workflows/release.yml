@@ -24,18 +24,11 @@ jobs:
       - name: Check Version
         id: check-version
         run: |
-          VERSION=$(python - <<'PY'
-import re
-from pathlib import Path
-
-content = Path("pyproject.toml").read_text()
-match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
-if not match:
-    raise SystemExit("version not found")
-
-print(match.group(1))
-PY
-)
+          VERSION=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' pyproject.toml | head -n1)
+          if [ -z "$VERSION" ]; then
+            echo "version not found" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Publish to PyPI
         env:
