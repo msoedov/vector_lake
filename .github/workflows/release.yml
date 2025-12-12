@@ -8,31 +8,36 @@ on:
     tags:
       - 0.*
 
-env:
-  POETRY_VERSION: "1.4.0"
-
 jobs:
   if_release:
     if: |
         true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
         with:
           python-version: "3.10"
-          cache: "poetry"
       - name: Build project for distribution
-        run: poetry build --format sdist
+        run: uv build
       - name: Check Version
         id: check-version
         run: |
-          echo version=$(poetry version --short) >> $GITHUB_OUTPUT
+          VERSION=$(python - <<'PY'
+import re
+from pathlib import Path
+
+content = Path("pyproject.toml").read_text()
+match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
+if not match:
+    raise SystemExit("version not found")
+
+print(match.group(1))
+PY
+)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Publish to PyPI
         env:
-          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          poetry publish --skip-existing
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: uv publish --token "$PYPI_API_TOKEN"

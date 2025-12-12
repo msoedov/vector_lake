@@ -1,17 +1,21 @@
+from __future__ import annotations
+
 import datetime
+import json
 import logging
 import math
 import os
 import time
 import uuid
+from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 from itertools import product
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 import pytz
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, PrivateAttr
 from sklearn.metrics.pairwise import cosine_similarity
 
 from vector_lake.core.hnsw import HNSW
@@ -24,7 +28,7 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logger.addHandler(logging.NullHandler())
 
 
 class LSH:
@@ -86,7 +90,7 @@ class LSH:
 
 
 def make_granularity(D: int, M: int) -> list:
-    if D < 0 or M < 0:
+    if D <= 0 or M <= 0:
         raise ValueError("D and M must be positive integers")
 
     base = M ** (1 / D)  # Base level for each dimension
@@ -115,6 +119,7 @@ def make_nodes(levels, num_shards):
 
 
 def timer_decorator(func):
+    @wraps(func)
     def wrapper(*args, **kwargs):
         start_time = time.time()
         result = func(*args, **kwargs)
@@ -189,16 +194,20 @@ class LazyBucket(BaseModel):
     metadata_name: str = "segment-{}-metadata.json"
     loaded: bool = False
     dirty: bool = False
-    frame: Any | None = None
-    frame_schema: str = ["id", "vector", "metadata", "document", "timestamp"]
-    vectors = []
-    dirty_rows = []
+    frame: Optional[Any] = None
+    frame_schema: list[str] = Field(
+        default_factory=lambda: ["id", "vector", "metadata", "document", "timestamp"]
+    )
+    vectors: list = Field(default_factory=list)
+    dirty_rows: list = Field(default_factory=list)
     hnsw: Any = None
-    attrs: dict[str, Any] = {}
+    attrs: dict[str, Any] = Field(default_factory=dict)
+    _synced_rows: int = PrivateAttr(0)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hnsw = HNSW("cosine", m0=5, ef=10)
+        self._synced_rows = 0
 
     def __repr__(self):
         return f"<{self.__class__.__name__}({self.segment_index=} {len(self.vectors)=} {self.dirty=} {self.loaded=} )>"
@@ -212,6 +221,22 @@ class LazyBucket(BaseModel):
         bucket_name = self.bucket_name.format(self.segment_index)
         return f"{self.db_location}/{bucket_name}"
 
+    @staticmethod
+    def _json_safe_attr(value):
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, (list, tuple)):
+            return [LazyBucket._json_safe_attr(v) for v in value]
+        if isinstance(value, dict):
+            return {k: LazyBucket._json_safe_attr(v) for k, v in value.items()}
+        try:
+            json.dumps(value)
+            return value
+        except TypeError:
+            return str(value)
+
     def _lazy_load(self):
         if self.loaded:
             return
@@ -220,12 +245,13 @@ class LazyBucket(BaseModel):
             self.frame = pd.read_parquet(self.frame_location)
         else:
             self.frame = pd.DataFrame(columns=self.frame_schema)
-            self.attrs = self.frame.attrs
+        self.attrs = dict(self.frame.attrs)
         if list(self.frame.columns) != self.frame_schema:
             raise ValueError(f"Invalid frame_schema {self.frame.columns=}")
         self.loaded = True
         self.vectors = self.frame["vector"].tolist()
         self.dirty_rows = self.frame.to_dict("records")
+        self._synced_rows = len(self.dirty_rows)
         for v in self.vectors:
             self.hnsw.add(v)
 
@@ -233,6 +259,7 @@ class LazyBucket(BaseModel):
         if not self.loaded:
             self._lazy_load()
         uid = uuid.uuid1().urn
+        vector = np.asarray(vector)
         document = {
             "id": uid,
             "vector": vector,
@@ -259,16 +286,27 @@ class LazyBucket(BaseModel):
         if not self.dirty:
             return
 
-        self.frame = self.frame._append(self.dirty_rows, ignore_index=True)
-        if self.frame.empty:
+        new_rows = self.dirty_rows[self._synced_rows :]
+        if not new_rows:
+            self.dirty = False
             return
+
+        new_frame = pd.DataFrame(new_rows, columns=self.frame_schema)
+        self.frame = pd.concat([self.frame, new_frame], ignore_index=True)
         # TODO: eval last sync time
-        self.frame.attrs["last_update"] = datetime.datetime.now(pytz.UTC)
+        self.frame.attrs["last_update"] = self._json_safe_attr(
+            datetime.datetime.now(pytz.UTC)
+        )
         for k, v in attrs.items():
-            self.frame.attrs[k] = v
+            self.frame.attrs[k] = self._json_safe_attr(v)
+        # Ensure parquet metadata is JSON serializable
+        self.frame.attrs = {
+            key: self._json_safe_attr(val) for key, val in self.frame.attrs.items()
+        }
 
         os.makedirs(self.db_location, exist_ok=True)
         self.frame.to_parquet(self.frame_location, compression="gzip")
+        self._synced_rows = len(self.dirty_rows)
         self.dirty = False
 
     def delete(self):
@@ -292,6 +330,8 @@ class LazyBucket(BaseModel):
         return len(self.vectors)
 
     def memory_footprint(self):
+        if self.frame is None:
+            return 0
         return self.frame.memory_usage(deep=True).sum()
 
     def delete_local(self):
@@ -304,19 +344,22 @@ class LazyBucket(BaseModel):
 class S3Bucket(LazyBucket):
     remote_location: str = ""
     bytes_transferred: int = 0
+    _local_storage: str = PrivateAttr("")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.remote_location = self.db_location.strip("s3://")
+        self.remote_location = self.db_location.replace("s3://", "", 1)
+        self._local_storage = f"/tmp/vector_lake_{self.remote_location.replace('/', '_')}"
         self.db_location = self.local_storage
 
     @property
     def local_storage(self):
-        db_location = self.db_location.replace("://", "_")
-        return f"/tmp/vector_lake_{db_location}"
+        return self._local_storage
 
     @property
     def s3_client(self):
+        if boto3 is object:
+            raise RuntimeError("boto3 is not installed; install the s3 extra to enable remote storage.")
         return boto3.client(
             "s3", endpoint_url=os.environ.get("LOCALSTACK_ENDPOINT_URL")
         )
@@ -325,21 +368,19 @@ class S3Bucket(LazyBucket):
         if self.loaded:
             return
         logger.info(f"Loading fragment {self.key} from S3")
-        # Check if object exists in S3
         try:
-            self.s3_client.head_object(Bucket=self.remote_location, Key=self.key)
-        except Exception:
-            logger.info("Fragment does not exist in S3")
-            super()._lazy_load()
-        except Exception as e:
-            logger.exception(f"Unexpected error while checking for fragment in S3: {e}")
-        else:
-            logger.info("Fragment exists in S3, downloading...")
-            os.makedirs(os.path.dirname(self.frame_location), exist_ok=True)
-            self.s3_client.download_file(
-                self.remote_location, self.key, Filename=self.frame_location
-            )
-            super()._lazy_load()
+            client = self.s3_client
+            client.head_object(Bucket=self.remote_location, Key=self.key)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Falling back to local fragment for %s: %s", self.key, exc)
+            return super()._lazy_load()
+
+        logger.info("Fragment exists in S3, downloading...")
+        os.makedirs(os.path.dirname(self.frame_location), exist_ok=True)
+        self.s3_client.download_file(
+            self.remote_location, self.key, Filename=self.frame_location
+        )
+        super()._lazy_load()
 
     def sync(self):
         if not self.dirty:
@@ -367,6 +408,7 @@ class S3Bucket(LazyBucket):
                 ),
                 end="",
             )
+        return upload_progress_callback
 
     def delete_local(self):
         super().delete()
@@ -394,16 +436,16 @@ class Index(BaseModel):
     metric_function: str = "cosine"  # dotproduct | euqlidean | cosine
     max_cache_mb: int = 1024
     ttl: int = 3600
-    buckets: list = []
+    buckets: list = Field(default_factory=list)
 
     # HNSW specific parameters
-    granularity: list | None
-    num_shards: int | None
-    nodes: list | None
-    max_node: list | None
-    W: list | None
-    nn_mapping: Any | None
-    lsh: Any | None
+    granularity: Optional[list] = None
+    num_shards: Optional[int] = None
+    nodes: Optional[list] = None
+    max_node: Optional[list] = None
+    W: Optional[list] = None
+    nn_mapping: Optional[Any] = None
+    lsh: Optional[Any] = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -484,7 +526,7 @@ class Index(BaseModel):
             logger.debug("next shard")
 
         result_vectors = np.array([vector for vector in results])
-        if not result_vectors.any():
+        if result_vectors.size == 0:
             return [], []
 
         combined = list(zip(computed_distances, result_vectors, rows))

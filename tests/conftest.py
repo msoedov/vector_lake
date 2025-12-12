@@ -32,8 +32,11 @@ def index_factory():
 
 @pytest.fixture(scope="session")
 def s3_index_factory():
-    os.environ["LOCALSTACK_ENDPOINT_URL"] = "http://134.209.75.14:4566"
-    os.environ["AWS_ACCESS_KEY_ID"] = "foo"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "bar"
-    os.environ["AWS_DEFAULT_REGION"] = "us-west-2"
+    if not os.environ.get("RUN_S3_TESTS"):
+        pytest.skip("RUN_S3_TESTS is not set; skipping S3 integration tests by default.")
+    pytest.importorskip("boto3")
+    os.environ.setdefault("LOCALSTACK_ENDPOINT_URL", "http://localhost:4566")
+    os.environ.setdefault("AWS_ACCESS_KEY_ID", "foo")
+    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "bar")
+    os.environ.setdefault("AWS_DEFAULT_REGION", "us-west-2")
     return partial(factory_fn, location="s3://unittest-vector-lake")

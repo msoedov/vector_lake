@@ -157,6 +157,21 @@ Contributions to VectorLake are welcome! If you'd like to contribute, please fol
 
 Before contributing, please read the contributing guidelines.
 
+### Development (uv)
+
+VectorLake uses [uv](https://github.com/astral-sh/uv) for dependency management.
+
+```shell
+# install with dev tools; add --extra s3 if you need S3 support locally
+uv sync --extra dev
+
+# run tests via uv
+uv run pytest
+
+# update the lockfile after dependency changes
+uv lock
+```
+
 ## License
 
 VectorLake is released under the MIT License.
