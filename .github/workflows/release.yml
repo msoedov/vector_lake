@@ -21,15 +21,6 @@ jobs:
           python-version: "3.12"
       - name: Build project for distribution
         run: uv build
-      - name: Check Version
-        id: check-version
-        run: |
-          VERSION=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' pyproject.toml | head -n1)
-          if [ -z "$VERSION" ]; then
-            echo "version not found" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Publish to PyPI
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
