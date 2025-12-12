@@ -24,4 +24,4 @@ jobs:
       - name: Publish to PyPI
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: uv publish --token "$PYPI_API_TOKEN"
+        run: uv run --with twine twine upload --non-interactive -u __token__ -p "$PYPI_API_TOKEN" dist/*
