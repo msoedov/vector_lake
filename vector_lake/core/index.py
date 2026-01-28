@@ -7,10 +7,10 @@ import math
 import os
 import time
 import uuid
-from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 from itertools import product
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -53,19 +53,26 @@ class LSH:
     def _hash(self, vector):
         """Hashes a vector using all hyperplanes.
 
-        Returns a string of 0s and 1s.
+        Uses vectorized dot product and bitwise operations.
         """
-        return int(
-            "".join(
-                [
-                    "1" if np.dot(hyperplane, vector) > 0 else "0"
-                    for hyperplane in self.hyperplanes
-                ]
-            ),
-            base=2,
-        )
+        # Vectorized dot product: shape (num_hashes,)
+        projections = self.hyperplanes @ vector
+        # Convert to binary and pack into integer
+        bits = (projections > 0).astype(np.uint64)
+        # Build integer from binary array using powers of 2
+        return int(bits @ (1 << np.arange(self.num_hashes, dtype=np.uint64)))
 
     route = _hash
+
+    def neighbors(self, hash_val: int, max_distance: int = 1) -> list[int]:
+        """Get neighboring hashes within Hamming distance."""
+        neighbors = [hash_val]
+        if max_distance >= 1:
+            # Flip each bit to get Hamming distance 1 neighbors
+            for i in range(self.num_hashes):
+                neighbor = hash_val ^ (1 << i)
+                neighbors.append(neighbor)
+        return neighbors
 
     def insert(self, vector, label):
         """Inserts a vector into the LSH structure.
@@ -194,7 +201,7 @@ class LazyBucket(BaseModel):
     metadata_name: str = "segment-{}-metadata.json"
     loaded: bool = False
     dirty: bool = False
-    frame: Optional[Any] = None
+    frame: Any | None = None
     frame_schema: list[str] = Field(
         default_factory=lambda: ["id", "vector", "metadata", "document", "timestamp"]
     )
@@ -206,7 +213,8 @@ class LazyBucket(BaseModel):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.hnsw = HNSW("cosine", m0=5, ef=10)
+        # m0=16 for better graph connectivity, ef=50 for better search recall
+        self.hnsw = HNSW("cosine", m0=16, ef=50)
         self._synced_rows = 0
 
     def __repr__(self):
@@ -274,10 +282,12 @@ class LazyBucket(BaseModel):
         self.hnsw.add(vector)
         return uid
 
-    def search(self, vector: np.ndarray, k: int = 4):
+    def search(self, vector: np.ndarray, k: int = 4, ef: int | None = None):
         self._lazy_load()
         try:
-            results = self.hnsw.search(vector, k)
+            # Use higher ef for better recall; default to max(50, 2*k)
+            search_ef = ef if ef is not None else max(50, 2 * k)
+            results = self.hnsw.search(vector, k, ef=search_ef)
         except ValueError:  # Empty graph
             return []
         return results
@@ -349,7 +359,9 @@ class S3Bucket(LazyBucket):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.remote_location = self.db_location.replace("s3://", "", 1)
-        self._local_storage = f"/tmp/vector_lake_{self.remote_location.replace('/', '_')}"
+        self._local_storage = (
+            f"/tmp/vector_lake_{self.remote_location.replace('/', '_')}"
+        )
         self.db_location = self.local_storage
 
     @property
@@ -359,7 +371,9 @@ class S3Bucket(LazyBucket):
     @property
     def s3_client(self):
         if boto3 is object:
-            raise RuntimeError("boto3 is not installed; install the s3 extra to enable remote storage.")
+            raise RuntimeError(
+                "boto3 is not installed; install the s3 extra to enable remote storage."
+            )
         return boto3.client(
             "s3", endpoint_url=os.environ.get("LOCALSTACK_ENDPOINT_URL")
         )
@@ -408,6 +422,7 @@ class S3Bucket(LazyBucket):
                 ),
                 end="",
             )
+
         return upload_progress_callback
 
     def delete_local(self):
@@ -439,13 +454,13 @@ class Index(BaseModel):
     buckets: list = Field(default_factory=list)
 
     # HNSW specific parameters
-    granularity: Optional[list] = None
-    num_shards: Optional[int] = None
-    nodes: Optional[list] = None
-    max_node: Optional[list] = None
-    W: Optional[list] = None
-    nn_mapping: Optional[Any] = None
-    lsh: Optional[Any] = None
+    granularity: list | None = None
+    num_shards: int | None = None
+    nodes: list | None = None
+    max_node: list | None = None
+    W: list | None = None
+    nn_mapping: Any | None = None
+    lsh: Any | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -472,7 +487,7 @@ class Index(BaseModel):
         for k, pair in enumerate(self.max_node):
             if not pair:
                 continue
-            (_, v) = pair
+            _, v = pair
             idx = self.vector_router(v)
             W[k] = idx
         self.W = W
@@ -484,9 +499,18 @@ class Index(BaseModel):
         closest_index = self.lsh.route(vector)
         return closest_index
 
-    def adjacent_routing(self, vector) -> int:
+    def adjacent_routing(self, vector, num_probes: int = 1):
+        """Route to buckets using multi-probe LSH.
+
+        num_probes: 1 = exact bucket only, 2+ = also search neighbors
+        """
         closest_index = self.lsh.route(vector)
         yield self.buckets[closest_index]
+        # Multi-probe: also search neighboring buckets
+        if num_probes > 1:
+            for neighbor_idx in self.lsh.neighbors(closest_index, max_distance=1):
+                if neighbor_idx != closest_index and neighbor_idx < len(self.buckets):
+                    yield self.buckets[neighbor_idx]
 
     def __repr__(self):
         return f"<Index({self.location=}, {self.metric_function=}, {self.max_cache_mb}, {self.num_shards=})>"
@@ -497,44 +521,43 @@ class Index(BaseModel):
         return shard_index
 
     @timer_decorator
-    def _query(self, vector, k: int = 4) -> list:
+    def _query(self, vector, k: int = 4, num_probes: int = 2) -> list:
         results = []
         computed_distances = []
         rows = []
-        vector = np.array(vector)
+        if not isinstance(vector, np.ndarray):
+            vector = np.asarray(vector)
         ts = time.time()
-        rows_append = rows.append
-        for shard in self.adjacent_routing(vector):
+        for shard in self.adjacent_routing(vector, num_probes=num_probes):
             te = time.time() - ts
             logger.debug(f"adjacent routing took vps{1/te:.1f}")
             shard._lazy_load()
-            shard_np = np.array(shard.vectors)
 
             closest_indices_d = shard.search(vector, k=k)
+            if not closest_indices_d:
+                continue
+            # Unpack indices and distances in one pass
             closest_indices = [idx for idx, _ in closest_indices_d]
             shard_rows = shard.dirty_rows
-            closest_vectors = shard_np[closest_indices]
+            shard_vectors = shard.vectors
 
-            for idx in closest_indices[::-1]:
-                rows_append(shard_rows[idx])
-            shard_rows = []
-
-            results.extend(list(closest_vectors))
-            computed_distances.extend([d for _, d in closest_indices_d])
-            if len(results) >= k:
-                break
+            # Collect rows, vectors, and distances in same order
+            for idx in closest_indices:
+                rows.append(shard_rows[idx])
+                results.append(shard_vectors[idx])
+            computed_distances.extend(d for _, d in closest_indices_d)
             logger.debug("next shard")
 
-        result_vectors = np.array([vector for vector in results])
-        if result_vectors.size == 0:
+        if not results:
             return [], []
 
-        combined = list(zip(computed_distances, result_vectors, rows))
-        # Sort the combined list by distances
-        sorted_combined = sorted(combined, key=lambda x: x[0])
-        # Unzip the sorted list
-        sorted_distances, sorted_vectors, sorted_rows = zip(*sorted_combined)
-        return sorted_vectors[:k], sorted_rows[:k]
+        # Use numpy argsort for efficient sorting
+        distances_arr = np.array(computed_distances)
+        sort_indices = np.argsort(distances_arr)[:k]
+
+        sorted_vectors = [results[i] for i in sort_indices]
+        sorted_rows = [rows[i] for i in sort_indices]
+        return sorted_vectors, sorted_rows
 
     def query(self, vector, k: int = 4) -> list:
         vectors, rows = self._query(vector, k)

@@ -10,11 +10,23 @@ DISTANCE_COSINE = "cosine"
 
 
 def l2_distance(a, b):
-    return np.linalg.norm(a - b)
+    diff = a - b
+    return np.sqrt(np.dot(diff, diff))
 
 
 def cosine_distance(a, b):
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    """Compute cosine distance (1 - cosine_similarity).
+
+    Returns a value in [0, 2] where 0 = identical, 2 = opposite.
+    """
+    dot = np.dot(a, b)
+    norm_a = np.sqrt(np.dot(a, a))
+    norm_b = np.sqrt(np.dot(b, b))
+    denom = norm_a * norm_b
+    if denom == 0:
+        return 1.0  # Return max distance for zero vectors
+    similarity = dot / denom
+    return 1.0 - similarity
 
 
 class HNSW:

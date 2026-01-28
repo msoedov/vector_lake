@@ -1,9 +1,11 @@
 """Wrapper around VectorLakeStore embeddings."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
@@ -22,7 +24,7 @@ class VectorLakeStore(VectorStore):
         self,
         location: str = ".vector_lake",
         dimension: int = 384,
-        embedding: Optional[Embeddings] = None,
+        embedding: Embeddings | None = None,
         **opts: Any,
     ) -> None:
         """Initialize with VectorLake client."""
@@ -43,7 +45,7 @@ class VectorLakeStore(VectorStore):
     def add_texts(
         self,
         texts: Iterable[str],
-        metadatas: Optional[list[dict]] = None,
+        metadatas: list[dict] | None = None,
         **kwargs: Any,
     ) -> list[str]:
         """Run more texts through the embeddings and add to the vectorstore.
@@ -69,7 +71,7 @@ class VectorLakeStore(VectorStore):
     async def aadd_texts(
         self,
         texts: Iterable[str],
-        metadatas: Optional[list[dict]] = None,
+        metadatas: list[dict] | None = None,
         **kwargs: Any,
     ) -> list[str]:
         """Run more texts through the embeddings and add to the vectorstore."""
@@ -94,7 +96,7 @@ class VectorLakeStore(VectorStore):
         cls,
         texts: list[str],
         embedding: Embeddings,
-        metadatas: Optional[list[dict]] = None,
+        metadatas: list[dict] | None = None,
         **kwargs: Any,
     ) -> VectorLakeStore:
         """Return VectorStore initialized from texts and embeddings."""
@@ -107,7 +109,7 @@ class VectorLakeStore(VectorStore):
         cls: type[VectorLakeStore],
         texts: list[str],
         embedding: Embeddings,
-        metadatas: Optional[list[dict]] = None,
+        metadatas: list[dict] | None = None,
         **kwargs: Any,
     ) -> VectorLakeStore:
         """Return VectorStore initialized from texts and embeddings."""
