@@ -14,8 +14,8 @@
         "Run pytest to verify tests still pass"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Updated fire from 0.7.0 to 0.7.1"
     },
     {
       "id": "US-002",
@@ -28,8 +28,8 @@
         "Commit updated configuration"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "All hooks were already at latest versions - verified with pre-commit autoupdate and pre-commit run --all-files"
     },
     {
       "id": "US-003",
