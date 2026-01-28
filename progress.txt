@@ -1,0 +1,13 @@
+## Codebase Patterns
+
+- Use `uv sync --extra dev` to install dependencies
+- Run tests with `uv run pytest`
+- Use `pre-commit run --all-files` to run all linters
+- HNSW uses cosine distance by default
+- LSH is used for routing vectors to buckets
+- LazyBucket handles local storage, S3Bucket extends for remote storage
+- Use table-driven tests when possible
+- Use inline_snapshot for deterministic output verification
+- Tests should be organized: tests/unit/, tests/integration/, tests/system/
+
+---

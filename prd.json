@@ -1,0 +1,93 @@
+{
+  "project": "VectorLake",
+  "branchName": "ralph/improvements",
+  "description": "VectorLake Performance and Quality Improvements - Update dependencies, improve performance, accuracy, structure and tests",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Update project dependencies to latest versions",
+      "description": "As a developer, I need all project dependencies updated to their latest stable versions for security and performance improvements.",
+      "acceptanceCriteria": [
+        "Update pyproject.toml with latest compatible versions of all dependencies",
+        "Run uv lock to update lockfile",
+        "Run uv sync --extra dev to verify installation",
+        "Run pytest to verify tests still pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Update pre-commit hook versions",
+      "description": "As a developer, I need pre-commit hooks updated to latest versions for better code quality checks.",
+      "acceptanceCriteria": [
+        "Update .pre-commit-config.yaml with latest hook versions",
+        "Run pre-commit autoupdate or manually update versions",
+        "Run pre-commit run --all-files to verify hooks work",
+        "Commit updated configuration"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Improve test structure with proper directory organization",
+      "description": "As a developer, I need tests organized into unit, integration, and system directories for better maintainability.",
+      "acceptanceCriteria": [
+        "Create tests/unit/, tests/integration/, tests/system/ directories",
+        "Move existing unit tests to tests/unit/",
+        "Move property-based tests to tests/unit/",
+        "Move S3 tests to tests/integration/",
+        "Add __init__.py files to all test directories",
+        "Run pytest to verify all tests still pass"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add inline_snapshot tests for critical functions",
+      "description": "As a developer, I need snapshot tests for deterministic output verification.",
+      "acceptanceCriteria": [
+        "Add inline-snapshot to dev dependencies",
+        "Create snapshot tests for LSH hash function with fixed seeds",
+        "Create snapshot tests for make_granularity function",
+        "Run pytest to verify tests pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Optimize HNSW search performance with batch distance computation",
+      "description": "As a user, I need faster vector search operations for better query performance.",
+      "acceptanceCriteria": [
+        "Optimize vectorized_distance to use numpy broadcasting",
+        "Reduce memory allocations in search hot path",
+        "Run benchmarks to verify performance improvement",
+        "All existing tests must pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Improve search accuracy with better HNSW parameters",
+      "description": "As a user, I need more accurate nearest neighbor results.",
+      "acceptanceCriteria": [
+        "Add recall test comparing against brute-force search",
+        "Tune HNSW parameters (m, ef) for better recall",
+        "Document parameter choices",
+        "Run tests to verify accuracy improvements"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

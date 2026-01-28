@@ -9,7 +9,7 @@ keywords = ["vector", "database", "bigdata"]
 authors = [{ name = "Alexander Miasoiedov", email = "msoedov@gmail.com" }]
 maintainers = [{ name = "Alexander Miasoiedov", email = "msoedov@gmail.com" }]
 dependencies = [
-    "fire>=0.7.0,<0.8.0",
+    "fire>=0.7.1,<0.8.0",
     "loguru>=0.7.3,<0.8.0",
     "numpy>=2.0.0,<3.0.0",
     "pandas>=3.0.0,<4.0.0",
@@ -55,7 +55,7 @@ vector_lake = "vector_lake.__main__:entrypoint"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fire = "^0.7.0"
+fire = "^0.7.1"
 loguru = "^0.7.3"
 numpy = "^2.0.0"
 pandas = "^3.0.0"

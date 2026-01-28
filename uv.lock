@@ -1057,7 +1057,7 @@ s3 = [
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.1.0,<27.0.0" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.42.0,<2.0.0" },
-    { name = "fire", specifier = ">=0.7.0,<0.8.0" },
+    { name = "fire", specifier = ">=0.7.1,<0.8.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0,<0.29.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.151.0,<7.0.0" },
     { name = "loguru", specifier = ">=0.7.3,<0.8.0" },
