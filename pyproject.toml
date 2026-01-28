@@ -3,33 +3,33 @@ name = "vector_lake"
 version = "0.0.5"
 description = "S3 vector database for bigdata"
 readme = "Readme.md"
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.11,<4.0"
 license = { text = "MIT" }
 keywords = ["vector", "database", "bigdata"]
 authors = [{ name = "Alexander Miasoiedov", email = "msoedov@gmail.com" }]
 maintainers = [{ name = "Alexander Miasoiedov", email = "msoedov@gmail.com" }]
 dependencies = [
-    "fire>=0.5.0,<0.6.0",
-    "loguru>=0.7.0,<0.8.0",
-    "numpy>=1.26.4,<2.0.0",
-    "pandas>=2.2.2,<3.0.0",
-    "pyarrow>=16.1.0,<17.0.0",
-    "pydantic>=1.10.15,<2.0.0",
-    "pytz>=2024.1,<2025.0",
-    "scikit-learn>=1.4.2,<2.0.0",
+    "fire>=0.7.1,<0.8.0",
+    "loguru>=0.7.3,<0.8.0",
+    "numpy>=2.0.0,<3.0.0",
+    "pandas>=3.0.0,<4.0.0",
+    "pyarrow>=23.0.0,<24.0.0",
+    "pydantic>=1.10.24,<2.0.0",
+    "pytz>=2025.2",
+    "scikit-learn>=1.8.0,<2.0.0",
 ]
 urls = { "Repository" = "https://github.com/msoedov/vector_lake" }
 
 [project.optional-dependencies]
-s3 = ["boto3>=1.34.115,<2.0.0"]
+s3 = ["boto3>=1.42.0,<2.0.0"]
 dev = [
-    "black>=24.4.2,<25.0.0",
-    "mypy>=1.10.0,<2.0.0",
-    "httpx>=0.27.0,<0.28.0",
-    "pytest>=8.2.0,<9.0.0",
-    "types-requests>=2.31.0,<3.0.0",
-    "pre-commit>=3.7.1,<4.0.0",
-    "hypothesis>=6.99.13,<7.0.0",
+    "black>=26.1.0,<27.0.0",
+    "mypy>=1.19.0,<2.0.0",
+    "httpx>=0.28.0,<0.29.0",
+    "pytest>=9.0.0,<10.0.0",
+    "types-requests>=2.32.0,<3.0.0",
+    "pre-commit>=4.5.0,<5.0.0",
+    "hypothesis>=6.151.0,<7.0.0",
     "pytest-benchmark==4.0.0",
 ]
 
@@ -54,25 +54,25 @@ packages = [{ include = "vector_lake", from = "." }]
 vector_lake = "vector_lake.__main__:entrypoint"
 
 [tool.poetry.dependencies]
-python = "^3.9"
-fire = "^0.5.0"
-loguru = "^0.7.0"
-numpy = "^1.26.4"
-pandas = "^2.2.2"
-pyarrow = "^16.1.0"
-pydantic = "^1.10.15"
-pytz = "^2024.1"
-scikit-learn = "^1.4.2"
-boto3 = { version = "^1.34.115", optional = true }
+python = "^3.11"
+fire = "^0.7.1"
+loguru = "^0.7.3"
+numpy = "^2.0.0"
+pandas = "^3.0.0"
+pyarrow = "^23.0.0"
+pydantic = "^1.10.24"
+pytz = "^2025.2"
+scikit-learn = "^1.8.0"
+boto3 = { version = "^1.42.0", optional = true }
 
 [tool.poetry.group.dev.dependencies]
-black = "^24.4.2"
-mypy = "^1.10.0"
-httpx = "^0.27.0"
-pytest = "^8.2.0"
-types-requests = "^2.31.0"
-pre-commit = "^3.7.1"
-hypothesis = "^6.99.13"
+black = "^26.1.0"
+mypy = "^1.19.0"
+httpx = "^0.28.0"
+pytest = "^9.0.0"
+types-requests = "^2.32.0"
+pre-commit = "^4.5.0"
+hypothesis = "^6.151.0"
 pytest-benchmark = "4.0.0"
 
 [tool.poetry.extras]

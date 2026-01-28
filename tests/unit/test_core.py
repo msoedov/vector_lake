@@ -3,8 +3,7 @@ import numpy as np
 from vector_lake.core.index import make_granularity, make_nodes
 
 
-class TestUnit:
-    # Tests that the function works when D is 1
+class TestMakeGranularity:
     def test_D_is_1(self):
         D = 1
         M = 10
@@ -16,7 +15,6 @@ class TestUnit:
         assert all(level <= M for level in levels)
         assert sum(levels) == M
 
-    # Tests that D and M are positive integers
     def test_positive_integers(self):
         D = 3
         M = 10
@@ -25,7 +23,8 @@ class TestUnit:
         assert all(isinstance(level, int) for level in levels)
         assert all(level > 0 for level in levels)
 
-    # Tests that the function works with levels and num_shards as 1
+
+class TestMakeNodes:
     def test_levels_and_num_shards_as_1(self):
         levels = [1, 1]
         num_shards = 1
@@ -33,7 +32,6 @@ class TestUnit:
         assert nodes.shape == (1, 2)
         assert np.allclose(nodes, np.array([[0.0, 0.0]]))
 
-    # Tests that the function works with default values for levels and num_shards
     def test_default_values(self):
         levels = [2, 2]
         num_shards = 4
@@ -43,6 +41,8 @@ class TestUnit:
             nodes, np.array([[0.0, 0.0], [0.0, 0.5], [0.5, 0.0], [0.5, 0.5]])
         )
 
+
+class TestEndToEnd:
     def test_end_to_end(self, index_factory):
         index = index_factory(
             location="/tmp/cosine/empty",
@@ -68,8 +68,3 @@ class TestUnit:
         closest_vectors = index.query(vector, 4)
         assert len(closest_vectors) == 1
         assert np.array_equal(closest_vectors[0]["vector"], vector)
-        return index
-
-    def test_end_to_end_s3(self, s3_index_factory):
-        index = self.test_end_to_end(s3_index_factory)
-        index.delete_remote()

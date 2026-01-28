@@ -33,7 +33,9 @@ def index_factory():
 @pytest.fixture(scope="session")
 def s3_index_factory():
     if not os.environ.get("RUN_S3_TESTS"):
-        pytest.skip("RUN_S3_TESTS is not set; skipping S3 integration tests by default.")
+        pytest.skip(
+            "RUN_S3_TESTS is not set; skipping S3 integration tests by default."
+        )
     pytest.importorskip("boto3")
     os.environ.setdefault("LOCALSTACK_ENDPOINT_URL", "http://localhost:4566")
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "foo")

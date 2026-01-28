@@ -85,7 +85,6 @@ def test_query_empty(vector):
     index.delete_local()
 
 
-# TODO: fix [0.0, 0.0, 0.0, 0.0, 0.0] case
 @settings(deadline=500)
 @pytest.mark.skip(reason="benchmarking")
 @given(
